@@ -35,13 +35,48 @@ export class StockServiceError extends Error {
   }
 }
 
+// Environment-aware URL configuration
+function getStockServiceUrl(): string {
+  // Check if we're on the client side
+  if (typeof window !== 'undefined') {
+    // Client-side: Use environment variable or fallback
+    return process.env.NEXT_PUBLIC_STOCK_API_URL || 
+           process.env.NEXT_PUBLIC_API_BASE_URL?.replace('/api', '') ||
+           'http://localhost:8000';
+  }
+  
+  // Server-side: Use server environment variable or fallback
+  return process.env.PYTHON_STOCK_SERVICE_URL || 
+         process.env.STOCK_API_URL ||
+         'http://localhost:8000';
+}
+
+// Check if we're in development mode
+function isDevelopment(): boolean {
+  return process.env.NODE_ENV === 'development';
+}
+
+// Log environment info (only in development)
+if (isDevelopment() && typeof window !== 'undefined') {
+  console.log('🔧 Stock Service Configuration:', {
+    environment: process.env.NODE_ENV,
+    stockServiceUrl: getStockServiceUrl(),
+    isDevelopment: isDevelopment(),
+  });
+}
+
 export class StockService {
   private baseUrl: string;
   private timeout: number;
 
-  constructor(baseUrl: string = 'http://localhost:8000', timeout: number = 30000) {
-    this.baseUrl = baseUrl;
+  constructor(baseUrl?: string, timeout: number = 30000) {
+    this.baseUrl = baseUrl || getStockServiceUrl();
     this.timeout = timeout;
+    
+    // Log the URL being used (only in development)
+    if (isDevelopment()) {
+      console.log(`📡 StockService initialized with URL: ${this.baseUrl}`);
+    }
   }
 
   private async fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
@@ -54,6 +89,7 @@ export class StockService {
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           ...options.headers,
         },
       });
@@ -75,8 +111,12 @@ export class StockService {
     }
 
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      const devMessage = isDevelopment() 
+        ? ` Please check if the Python service is running on ${this.baseUrl}`
+        : '';
+      
       throw new StockServiceError(
-        'Unable to connect to stock service. Please check if the Python service is running.',
+        `Unable to connect to stock service.${devMessage}`,
         'CONNECTION_ERROR',
         symbol
       );
@@ -92,9 +132,17 @@ export class StockService {
   async healthCheck(): Promise<boolean> {
     try {
       const response = await this.fetchWithTimeout(`${this.baseUrl}/health`);
-      return response.ok;
+      const result = response.ok;
+      
+      if (isDevelopment()) {
+        console.log(`🏥 Health check: ${result ? '✅ Healthy' : '❌ Unhealthy'} (${this.baseUrl})`);
+      }
+      
+      return result;
     } catch (error) {
-      console.error('Health check failed:', error);
+      if (isDevelopment()) {
+        console.error('❌ Health check failed:', error);
+      }
       return false;
     }
   }
@@ -102,6 +150,11 @@ export class StockService {
   async getSingleStock(symbol: string, exchange: string = 'NS'): Promise<StockPrice> {
     try {
       const url = `${this.baseUrl}/stock/${encodeURIComponent(symbol)}?exchange=${exchange}`;
+      
+      if (isDevelopment()) {
+        console.log(`📊 Fetching single stock: ${symbol} from ${url}`);
+      }
+      
       const response = await this.fetchWithTimeout(url);
 
       if (!response.ok) {
@@ -130,7 +183,13 @@ export class StockService {
         throw new StockServiceError('Maximum 50 symbols allowed per request', 'BATCH_SIZE_EXCEEDED');
       }
 
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/stocks/batch`, {
+      const url = `${this.baseUrl}/stocks/batch`;
+      
+      if (isDevelopment()) {
+        console.log(`📊 Fetching batch stocks: [${symbols.join(', ')}] from ${url}`);
+      }
+
+      const response = await this.fetchWithTimeout(url, {
         method: 'POST',
         body: JSON.stringify({ symbols }),
       });
@@ -152,7 +211,13 @@ export class StockService {
 
   async getPopularStocks(): Promise<BatchStockResponse> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/stocks/popular`);
+      const url = `${this.baseUrl}/stocks/popular`;
+      
+      if (isDevelopment()) {
+        console.log(`🌟 Fetching popular stocks from ${url}`);
+      }
+
+      const response = await this.fetchWithTimeout(url);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -183,9 +248,19 @@ export class StockService {
     const pattern = /^[A-Z0-9]+\.(NS|BO)$/;
     return pattern.test(symbol.toUpperCase());
   }
+
+  // Get current configuration info
+  getConfig() {
+    return {
+      baseUrl: this.baseUrl,
+      timeout: this.timeout,
+      environment: process.env.NODE_ENV,
+      isDevelopment: isDevelopment(),
+    };
+  }
 }
 
-// Export singleton instance
+// Export singleton instance with environment-aware configuration
 export const stockService = new StockService();
 
 // React Hook for stock data (only if running in browser)
@@ -194,13 +269,20 @@ import { useState, useEffect, useCallback } from 'react';
 export interface UseStockDataOptions {
   refreshInterval?: number; // in milliseconds
   autoRefresh?: boolean;
+  onError?: (error: StockServiceError) => void;
+  onSuccess?: (data: BatchStockResponse) => void;
 }
 
 export function useStockData(
   symbols: string[],
   options: UseStockDataOptions = {}
 ) {
-  const { refreshInterval = 300000, autoRefresh = true } = options; // 5 minutes default
+  const { 
+    refreshInterval = 300000, // 5 minutes default
+    autoRefresh = true,
+    onError,
+    onSuccess 
+  } = options;
   
   const [data, setData] = useState<BatchStockResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -217,16 +299,26 @@ export function useStockData(
       const result = await stockService.getMultipleStocks(symbols);
       setData(result);
       setLastUpdated(new Date());
+      onSuccess?.(result);
+      
+      if (isDevelopment()) {
+        console.log(`✅ Stock data updated: ${result.successful_count}/${result.total_requested} successful`);
+      }
     } catch (err) {
-      const errorMessage = err instanceof StockServiceError 
-        ? err.message 
-        : 'Failed to fetch stock data';
-      setError(errorMessage);
-      console.error('Stock data fetch error:', err);
+      const stockError = err instanceof StockServiceError 
+        ? err 
+        : new StockServiceError('Failed to fetch stock data', 'UNKNOWN_ERROR');
+      
+      setError(stockError.message);
+      onError?.(stockError);
+      
+      if (isDevelopment()) {
+        console.error('❌ Stock data fetch error:', stockError);
+      }
     } finally {
       setLoading(false);
     }
-  }, [symbols]);
+  }, [symbols, onError, onSuccess]);
 
   useEffect(() => {
     fetchData();
@@ -248,29 +340,40 @@ export function useStockData(
   };
 }
 
-// Health check hook
+// Health check hook with better status tracking
 export function useStockServiceHealth() {
   const [isHealthy, setIsHealthy] = useState<boolean>(false);
   const [checking, setChecking] = useState<boolean>(true);
+  const [lastChecked, setLastChecked] = useState<Date | null>(null);
+
+  const checkHealth = useCallback(async () => {
+    setChecking(true);
+    try {
+      const healthy = await stockService.healthCheck();
+      setIsHealthy(healthy);
+      setLastChecked(new Date());
+    } catch (error) {
+      setIsHealthy(false);
+      if (isDevelopment()) {
+        console.error('Health check error:', error);
+      }
+    } finally {
+      setChecking(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const checkHealth = async () => {
-      setChecking(true);
-      try {
-        const healthy = await stockService.healthCheck();
-        setIsHealthy(healthy);
-      } catch (error) {
-        setIsHealthy(false);
-      } finally {
-        setChecking(false);
-      }
-    };
-
     checkHealth();
     const interval = setInterval(checkHealth, 60000); // Check every minute
 
     return () => clearInterval(interval);
-  }, []);
+  }, [checkHealth]);
 
-  return { isHealthy, checking };
+  return { 
+    isHealthy, 
+    checking, 
+    lastChecked,
+    recheckHealth: checkHealth,
+    config: stockService.getConfig()
+  };
 }
