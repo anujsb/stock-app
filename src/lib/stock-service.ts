@@ -1,3 +1,4 @@
+"use client";
 // src/lib/stock-service.ts
 export interface StockPrice {
   symbol: string;
