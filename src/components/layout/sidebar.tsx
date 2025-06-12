@@ -2,14 +2,29 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { cn } from '@/lib/utils'
 import { 
   LayoutDashboard, 
   FolderOpen, 
   Newspaper, 
   Bot,
-  TrendingUp
+  TrendingUp,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
+
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarTrigger,
+  useSidebar,
+} from '@/components/ui/sidebar'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -18,36 +33,48 @@ const navigation = [
   { name: 'AI Recommendations', href: '/recommendations', icon: Bot },
 ]
 
-export function Sidebar() {
+export function AppSidebar() {
   const pathname = usePathname()
+  const { state } = useSidebar()
+  const isCollapsed = state === 'collapsed'
 
   return (
-    <div className="w-64 bg-white shadow-lg">
-      <div className="flex items-center px-6 py-4 border-b">
-        <TrendingUp className="h-8 w-8 text-blue-600" />
-        <span className="ml-2 text-xl font-bold text-gray-900">StockManager</span>
-      </div>
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <div className="flex items-center justify-between px-2 py-2">
+          <div className="flex items-center">
+            <TrendingUp className="h-8 w-8 text-blue-600" />
+            {!isCollapsed && (
+              <span className="ml-2 text-xl font-bold text-gray-900">StockManager</span>
+            )}
+          </div>
+          <SidebarTrigger className="ml-auto" />
+        </div>
+      </SidebarHeader>
       
-      <nav className="mt-6">
-        {navigation.map((item) => {
-          const isActive = pathname === item.href
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={cn(
-                'flex items-center px-6 py-3 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-700'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              )}
-            >
-              <item.icon className="mr-3 h-5 w-5" />
-              {item.name}
-            </Link>
-          )
-        })}
-      </nav>
-    </div>
+      <SidebarContent>
+        <SidebarGroup>
+          {!isCollapsed && <SidebarGroupLabel>Navigation</SidebarGroupLabel>}
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navigation.map((item) => (
+                <SidebarMenuItem key={item.name}>
+                  <SidebarMenuButton 
+                    asChild 
+                    isActive={pathname === item.href}
+                    tooltip={isCollapsed ? item.name : undefined}
+                  >
+                    <Link href={item.href}>
+                      <item.icon className="h-4 w-4" />
+                      {!isCollapsed && <span>{item.name}</span>}
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+    </Sidebar>
   )
 }
