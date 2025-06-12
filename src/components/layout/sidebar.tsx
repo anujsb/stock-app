@@ -9,7 +9,8 @@ import {
   Bot,
   TrendingUp,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  FileHeart
 } from 'lucide-react'
 
 import {
@@ -31,6 +32,7 @@ const navigation = [
   { name: 'Portfolio', href: '/portfolio', icon: FolderOpen },
   { name: 'News', href: '/news', icon: Newspaper },
   { name: 'AI Recommendations', href: '/recommendations', icon: Bot },
+  { name: 'watchlist', href: '/watchlist', icon: FileHeart },
 ]
 
 export function AppSidebar() {

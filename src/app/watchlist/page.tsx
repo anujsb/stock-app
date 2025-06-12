@@ -144,9 +144,9 @@ export default function StockTestPage() {
         {/* Header Section */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold">Stock Dashboard</h1>
+            <h1 className="text-3xl font-bold">Stock Watchlist</h1>
             <p className="text-muted-foreground">
-              Real-time Indian stock market data
+              Stocks to monitor for price changes and performance updates.
             </p>
           </div>
           
